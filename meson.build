@@ -26,7 +26,6 @@ libdrm = shared_library(
 	],
 	include_directories: [
 		'stub',
-		'/boot/system/develop/headers/libdrm',
 		'/boot/system/develop/headers/private/shared',
 	],
 	dependencies: [
