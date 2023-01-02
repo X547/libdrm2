@@ -8,7 +8,8 @@ Locks = LocksProj.get_variable('Locks')
 ThreadLinkProj = subproject('ThreadLink')
 ThreadLink = ThreadLinkProj.get_variable('ThreadLink')
 
-libdrm0 = dependency('libdrm')
+libbe = compiler.find_library('be')
+libdrm0 = dependency('libdrm').partial_dependency(compile_args : true)
 
 libdrm = shared_library(
 	'drm',
@@ -29,7 +30,7 @@ libdrm = shared_library(
 		'/boot/system/develop/headers/private/shared',
 	],
 	dependencies: [
-		compiler.find_library('be'),
+		libbe,
 		Locks,
 		ThreadLink,
 		libdrm0
