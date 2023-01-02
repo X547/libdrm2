@@ -269,10 +269,12 @@ int drmIoctlProxy(int fd, unsigned long request, void *arg)
 				link.Attach(&args.in, sizeof(args.in));
 				auto chunks = (struct drm_amdgpu_cs_chunk**)args.in.chunks;
 				for (size_t i = 0; i < args.in.num_chunks; i++) {
-					link.Attach(chunks[i], sizeof(struct drm_amdgpu_cs_chunk));
+					struct drm_amdgpu_cs_chunk *chunk = (struct drm_amdgpu_cs_chunk*)(((uint64_t*)args.in.chunks)[i]);
+					link.Attach(chunk, sizeof(struct drm_amdgpu_cs_chunk));
 				}
 				for (size_t i = 0; i < args.in.num_chunks; i++) {
-					switch(chunks[i]->chunk_id) {
+					struct drm_amdgpu_cs_chunk *chunk = (struct drm_amdgpu_cs_chunk*)(((uint64_t*)args.in.chunks)[i]);
+					switch(chunk->chunk_id) {
 						case AMDGPU_CHUNK_ID_IB:
 						case AMDGPU_CHUNK_ID_FENCE:
 						case AMDGPU_CHUNK_ID_DEPENDENCIES:
@@ -281,11 +283,11 @@ int drmIoctlProxy(int fd, unsigned long request, void *arg)
 						case AMDGPU_CHUNK_ID_SYNCOBJ_TIMELINE_WAIT:
 						case AMDGPU_CHUNK_ID_SYNCOBJ_TIMELINE_SIGNAL:
 						{
-							link.Attach((void*)chunks[i]->chunk_data, 4*chunks[i]->length_dw);
+							link.Attach((void*)chunk->chunk_data, 4*chunk->length_dw);
 							break;
 						}
 						case AMDGPU_CHUNK_ID_BO_HANDLES: {
-							auto chunk_data_handles = (drm_amdgpu_bo_list_in*)chunks[i]->chunk_data;
+							auto chunk_data_handles = (drm_amdgpu_bo_list_in*)chunk->chunk_data;
 							link.Attach(chunk_data_handles, sizeof(struct drm_amdgpu_bo_list_in));
 							link.Attach((void*)chunk_data_handles->bo_info_ptr, chunk_data_handles->bo_info_size*chunk_data_handles->bo_number);
 							break;

@@ -294,24 +294,24 @@ static void drmAmdgpuWriteCmd(unsigned long cmd, void *arg, bool isPost)
 			printf(", bo_list_handle: %" PRIu32, args->in.bo_list_handle);
 			printf(", num_chunks: %" PRIu32, args->in.num_chunks);
 			printf(", chunks: (\n");
-			struct drm_amdgpu_cs_chunk **chunks = (struct drm_amdgpu_cs_chunk**)args->in.chunks;
 			for (size_t i = 0; i < args->in.num_chunks; i++) {
+				struct drm_amdgpu_cs_chunk *chunk = (struct drm_amdgpu_cs_chunk*)(((uint64_t*)args->in.chunks)[i]);
 				printf("  (id: ");
-				switch(chunks[i]->chunk_id) {
+				switch(chunk->chunk_id) {
 					case 0x01: printf("IB"); {
-						struct drm_amdgpu_cs_chunk_ib *ib = (struct drm_amdgpu_cs_chunk_ib*)chunks[i]->chunk_data;
+						struct drm_amdgpu_cs_chunk_ib *ib = (struct drm_amdgpu_cs_chunk_ib*)chunk->chunk_data;
 						printf("(flags: %#" PRIx32 ", va_start: %#" PRIx64 ", ib_bytes: %u, ip_type: %u, ip_instance: %u, ring: %u)", ib->flags, ib->va_start, ib->ib_bytes, ib->ip_type, ib->ip_instance, ib->ring);
 						break;
 					}
 					case 0x02: printf("FENCE"); {
-						struct drm_amdgpu_cs_chunk_fence *fence = (struct drm_amdgpu_cs_chunk_fence*)chunks[i]->chunk_data;
+						struct drm_amdgpu_cs_chunk_fence *fence = (struct drm_amdgpu_cs_chunk_fence*)chunk->chunk_data;
 						printf("(handle: %u, offset: %u)", fence->handle, fence->offset);
 						break;
 					}
 					case 0x03: printf("DEPENDENCIES"); {
-						struct drm_amdgpu_cs_chunk_dep *depList = (struct drm_amdgpu_cs_chunk_dep*)chunks[i]->chunk_data;
+						struct drm_amdgpu_cs_chunk_dep *depList = (struct drm_amdgpu_cs_chunk_dep*)chunk->chunk_data;
 						printf("(");
-						for (size_t j = 0; j < chunks[i]->length_dw; j += sizeof(struct drm_amdgpu_cs_chunk_dep) / 4) {
+						for (size_t j = 0; j < chunk->length_dw; j += sizeof(struct drm_amdgpu_cs_chunk_dep) / 4) {
 							if (j > 0) printf(", ");
 							printf("(ip_type: %" PRIu32, depList->ip_type);
 							printf(", ip_instance: %" PRIu32, depList->ip_instance);
@@ -326,7 +326,7 @@ static void drmAmdgpuWriteCmd(unsigned long cmd, void *arg, bool isPost)
 					case 0x04: printf("SYNCOBJ_IN"); break;
 					case 0x05: printf("SYNCOBJ_OUT"); break;
 					case 0x06: printf("BO_HANDLES"); {
-						struct drm_amdgpu_bo_list_in *boList = (struct drm_amdgpu_bo_list_in*)chunks[i]->chunk_data;
+						struct drm_amdgpu_bo_list_in *boList = (struct drm_amdgpu_bo_list_in*)chunk->chunk_data;
 						printf("(operation: %d, list_handle: %d, bo_number: %u, bo_info_size: %u, bo_info_ptr: %#lx(", boList->operation, boList->list_handle, boList->bo_number, boList->bo_info_size, boList->bo_info_ptr);
 						for (size_t j = 0; j < boList->bo_number; j++) {
 							if (j > 0) printf(", ");
@@ -337,9 +337,9 @@ static void drmAmdgpuWriteCmd(unsigned long cmd, void *arg, bool isPost)
 					}
 					case 0x07: printf("SCHEDULED_DEPENDENCIES"); break;
 					case 0x08: printf("SYNCOBJ_TIMELINE_WAIT"); {
-						struct drm_amdgpu_cs_chunk_syncobj *syncobj = (struct drm_amdgpu_cs_chunk_syncobj*)chunks[i]->chunk_data;
+						struct drm_amdgpu_cs_chunk_syncobj *syncobj = (struct drm_amdgpu_cs_chunk_syncobj*)chunk->chunk_data;
 						printf("(");
-						for (size_t j = 0; j < chunks[i]->length_dw; j += sizeof(struct drm_amdgpu_cs_chunk_syncobj) / 4) {
+						for (size_t j = 0; j < chunk->length_dw; j += sizeof(struct drm_amdgpu_cs_chunk_syncobj) / 4) {
 							if (j > 0) printf(", ");
 							printf("(handle: %u, flags: %#x, point: %#lx)", syncobj->handle, syncobj->flags, syncobj->point);
 							syncobj++;
@@ -348,9 +348,9 @@ static void drmAmdgpuWriteCmd(unsigned long cmd, void *arg, bool isPost)
 						break;
 					}
 					case 0x09: printf("SYNCOBJ_TIMELINE_SIGNAL"); {
-						struct drm_amdgpu_cs_chunk_syncobj *syncobj = (struct drm_amdgpu_cs_chunk_syncobj*)chunks[i]->chunk_data;
+						struct drm_amdgpu_cs_chunk_syncobj *syncobj = (struct drm_amdgpu_cs_chunk_syncobj*)chunk->chunk_data;
 						printf("(");
-						for (size_t j = 0; j < chunks[i]->length_dw; j += sizeof(struct drm_amdgpu_cs_chunk_syncobj) / 4) {
+						for (size_t j = 0; j < chunk->length_dw; j += sizeof(struct drm_amdgpu_cs_chunk_syncobj) / 4) {
 							if (j > 0) printf(", ");
 							printf("(handle: %u, flags: %#x, point: %#lx)", syncobj->handle, syncobj->flags, syncobj->point);
 							syncobj++;
@@ -358,9 +358,9 @@ static void drmAmdgpuWriteCmd(unsigned long cmd, void *arg, bool isPost)
 						printf(")");
 						break;
 					}
-					default: printf("?(%u)", chunks[i]->chunk_id);
+					default: printf("?(%u)", chunk->chunk_id);
 				}
-				printf(", length: %u, data: %#" PRIx64 ")\n", chunks[i]->length_dw, chunks[i]->chunk_data);
+				printf(", length: %u, data: %#" PRIx64 ")\n", chunk->length_dw, chunk->chunk_data);
 			}
 			printf(")");
 			break;
