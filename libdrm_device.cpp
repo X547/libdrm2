@@ -32,11 +32,7 @@ drm_public char *drmGetPrimaryDeviceNameFromFd(int fd)
 
 static int drmGetMaxNodeName(void)
 {
-    return sizeof(DRM_DIR_NAME) +
-           MAX3(sizeof(DRM_PRIMARY_MINOR_NAME),
-                sizeof(DRM_CONTROL_MINOR_NAME),
-                sizeof(DRM_RENDER_MINOR_NAME)) +
-           3 /* length of the node number */;
+    return 256;
 }
 
 static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node, size_t bus_size, size_t device_size) {
@@ -50,7 +46,7 @@ static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node, size_t b
 
     size = sizeof(*device) + extra + bus_size + device_size;
 
-    device = calloc(1, size);
+    device = (drmDevicePtr)calloc(1, size);
     if (!device)
         return NULL;
 
@@ -78,9 +74,9 @@ static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node, size_t b
     return device;
 }
 
-static int drmGetDeviceInt(drmDevicePtr *device)
+static int drmGetDeviceInt(drmDevicePtr *device, const char *path)
 {
-	drmDevicePtr dev = drmDeviceAlloc(DRM_NODE_RENDER, "/dev/null" /* !!! */, sizeof(drmPciBusInfo), sizeof(drmPciDeviceInfo));
+	drmDevicePtr dev = drmDeviceAlloc(DRM_NODE_RENDER, path, sizeof(drmPciBusInfo), sizeof(drmPciDeviceInfo));
 
 	// !!!
 	*dev->businfo.pci = (drmPciBusInfo){
@@ -102,12 +98,12 @@ static int drmGetDeviceInt(drmDevicePtr *device)
 drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[], int max_devices)
 {
 	fprintf(stderr, "drmGetDevices2()\n");
-	int deviceCnt = gDriverHooks[1] == NULL ? 0 : 1;
+	int deviceCnt = 1;
 	if (devices == NULL) {
 		return deviceCnt;
 	}
 	if (max_devices >= 1) {
-		drmGetDeviceInt(&devices[0]);
+		drmGetDeviceInt(&devices[0], "/dev/graphics/radeon_gfx_010000" /* !!! */);
 		return deviceCnt;
 	}
 	return 0;
@@ -183,11 +179,11 @@ drm_public void drmFreeDevice(drmDevicePtr *device)
 drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
 {
 	fprintf(stderr, "drmGetDevice2()\n");
-	drmGetDeviceInt(device);
+	drmGetDeviceInt(device, "/dev/graphics/radeon_gfx_010000" /* !!! */);
 	return 0;
 }
 
 drm_public char *drmGetRenderDeviceNameFromFd(int fd)
 {
-    return strdup("/dev/zero");
+    return strdup("/dev/graphics/radeon_gfx_010000" /* !!! */);
 }

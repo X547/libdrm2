@@ -8,16 +8,16 @@ Locks = LocksProj.get_variable('Locks')
 ThreadLinkProj = subproject('ThreadLink')
 ThreadLink = ThreadLinkProj.get_variable('ThreadLink')
 
-libbe = compiler.find_library('be')
-libdrm0 = dependency('libdrm').partial_dependency(compile_args : true)
+dep_libbe = compiler.find_library('be')
+dep_libaccelerant = dependency('libaccelerant')
+dep_libdrm0 = dependency('libdrm').partial_dependency(compile_args: true)
 
 libdrm = shared_library(
 	'drm',
 	[
 		'libdrm.cpp',
-		'libdrmProxy.cpp',
 		'libdrm_common.c',
-		'libdrm_device.c',
+		'libdrm_device.cpp',
 		'libdrm_trace.c',
 		'stub/libdrmStub.cpp',
 		'stub/radeon_hd.c',
@@ -30,10 +30,11 @@ libdrm = shared_library(
 		'/boot/system/develop/headers/private/shared',
 	],
 	dependencies: [
-		libbe,
+		dep_libbe,
+		dep_libaccelerant,
 		Locks,
 		ThreadLink,
-		libdrm0
+		dep_libdrm0
 	],
 	gnu_symbol_visibility: 'hidden',
 	version: '2.4.0',

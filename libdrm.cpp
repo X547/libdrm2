@@ -13,6 +13,7 @@ extern "C" {
 
 #include <SupportDefs.h>
 #include <OS.h>
+#include <AccelerantRoster.h>
 
 #include "ScopeExit.h"
 
@@ -20,7 +21,8 @@ extern "C" {
 #include "libdrm_trace.h"
 }
 #include "libdrmStub.h"
-#include "libdrmProxy.h"
+
+#define CheckRet(err) {status_t _err = (err); if (_err < B_OK) return _err;}
 
 
 static bool doTrace = false;
@@ -28,63 +30,12 @@ static bool doTrace = false;
 
 // #pragma mark - driver loader
 
-struct DriverHooks {
-	status_t (*Init)();
-	void *(*Mmap)(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
-	int (*Munmap)(void *addr, size_t length);
-	int (*Ioctl)(int fd, unsigned long request, void *arg);
-};
-
-void *gDriverImage = NULL;
-DriverHooks gDriverHooks = {0};
-
-static status_t LoadDriver()
-{
-	gDriverImage = dlopen("/boot/home/Tests/GL/RadeonGfx/build.x86_64/RadeonGfx", RTLD_NOW | RTLD_LOCAL);
-	if (gDriverImage == NULL) return B_ERROR;
-	*(void**)&gDriverHooks.Init   = dlsym(gDriverImage, "drmInit");   if (gDriverHooks.Init   == NULL) return B_ERROR;
-	*(void**)&gDriverHooks.Mmap   = dlsym(gDriverImage, "drmMmap");   if (gDriverHooks.Mmap   == NULL) return B_ERROR;
-	*(void**)&gDriverHooks.Munmap = dlsym(gDriverImage, "drmMunmap"); if (gDriverHooks.Munmap == NULL) return B_ERROR;
-	*(void**)&gDriverHooks.Ioctl  = dlsym(gDriverImage, "drmIoctl");  if (gDriverHooks.Ioctl  == NULL) return B_ERROR;
-	status_t res = gDriverHooks.Init();
-	if (res < B_OK) return res;
-
-	return B_OK;
-}
-
-static status_t LoadProxy()
-{
-	gDriverHooks.Init   = drmProxyInit;
-	gDriverHooks.Mmap   = drmMmapProxy;
-	gDriverHooks.Munmap = drmMunmapProxy;
-	gDriverHooks.Ioctl  = drmIoctlProxy;
-	status_t res = gDriverHooks.Init();
-	if (res < B_OK) return res;
-
-	return B_OK;
-}
-
 class DriverLoader {
 public:
 	DriverLoader(bool useProxy)
 	{
-		status_t res;
 		const char* trace = getenv("LIBDRM_TRACE");
 		doTrace = (trace != NULL);
-		if (useProxy) {
-			res = LoadProxy();
-		} else {
-			res = LoadDriver();
-		}
-		if (res < B_OK) {
-			fprintf(stderr, "[!] libdrm2: can't load driver\n");
-			memset(&gDriverHooks, 0, sizeof(gDriverHooks));
-			//abort();
-		}
-	}
-
-	~DriverLoader()
-	{
 	}
 } gDriverLoader(true);
 
@@ -104,18 +55,17 @@ drm_public void drmMsg(const char *format, ...)
 
 drm_public void *drmMmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
-	if (gDriverHooks.Mmap != NULL) {
-		return gDriverHooks.Mmap(addr, length, prot, flags, fd, offset);
-	}
-	return drmMmapStub(addr, length, prot, flags, fd, offset);
+	Accelerant *acc{};
+	if (AccelerantRoster::Instance().FromFd(acc, fd) < B_OK) return NULL;
+	BReference<Accelerant> accDeleter(acc, true);
+	AccelerantDrm *accDrm = dynamic_cast<AccelerantDrm*>(acc);
+	if (accDrm == NULL) return NULL;
+	return accDrm->DrmMmap(addr, length, prot, flags, offset);
 }
 
 drm_public int drmMunmap(void *addr, size_t length)
 {
-	if (gDriverHooks.Munmap != NULL) {
-		return gDriverHooks.Munmap(addr, length);
-	}
-	return drmMunmapStub(addr, length);
+	return munmap(addr, length);
 }
 
 drm_public int drmIoctl(int fd, unsigned long request, void *arg)
@@ -124,19 +74,18 @@ drm_public int drmIoctl(int fd, unsigned long request, void *arg)
 		setvbuf(stdout, NULL, _IONBF, 0);
 		drmIoctlTrace(fd, request, arg, false);
 	}
-	const auto& scopeExit = MakeScopeExit([&]() {
+	ScopeExit scopeExit{[&]() {
 		if (doTrace /*&& find_thread(NULL) == getpid()*/) {
 			drmIoctlTrace(fd, request, arg, true);
 		}
-	});
+	}};
 
-	if (gDriverHooks.Ioctl != NULL) {
-		int ret = gDriverHooks.Ioctl(fd, request, arg);
-		//printf(", %d ", ret);
-		if (ret != ENOSYS) {
-			return ret;
-		}
-	}
-
+	Accelerant *acc{};
+	CheckRet(AccelerantRoster::Instance().FromFd(acc, fd));
+	BReference<Accelerant> accDeleter(acc, true);
+	AccelerantDrm *accDrm = dynamic_cast<AccelerantDrm*>(acc);
+	if (accDrm == NULL) return ENOSYS;
+	int res = accDrm->DrmIoctl(request, arg);
+	if (res != ENOSYS) return res;
 	return drmIoctlStub(fd, request, arg);
 }
