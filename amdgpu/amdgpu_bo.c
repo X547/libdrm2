@@ -156,12 +156,12 @@ drm_public int amdgpu_bo_import(amdgpu_device_handle dev,
 	if (type == amdgpu_bo_handle_type_dma_buf_fd) {
 
 		/* Get a KMS handle. */
-		r = bo->dev->acc_drm->vt->DrmPrimeFDToHandle(bo->dev->acc_drm, shared_handle, &handle);
+		r = dev->acc_drm->vt->DrmPrimeFDToHandle(dev->acc_drm, shared_handle, &handle);
 		if (r)
 			goto unlock;
 
 		/* Query the buffer size. */
-		r = bo->dev->acc_amdgpu->vt->AmdgpuBoQueryInfo(bo->dev->acc_amdgpu, handle, &info);
+		r = dev->acc_amdgpu->vt->AmdgpuBoQueryInfo(dev->acc_amdgpu, handle, &info);
 		if (r)
 			goto unlock;
 
