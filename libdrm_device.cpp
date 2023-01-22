@@ -3,7 +3,6 @@
 #include <xf86drm.h>
 #include "libdrm_macros.h"
 #include "util_math.h"
-#include <libdrm/amdgpu_drm.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -11,12 +10,47 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <algorithm>
+
+#include <Entry.h>
+#include <Directory.h>
+
+#include "Poke.h"
+
 #define memclear(s) memset(&s, 0, sizeof(s))
 
-#define ATI_VENDOR_ID         0x1002
+static const char sDevPath[] = "/dev/graphics/";
 
 
-extern void *gDriverHooks[];
+static bool ParseDevPciAdr(uint8 &bus, uint8 &device, uint8 function, const char *name)
+{
+	size_t nameLen = strlen(name);
+	if (nameLen <= 7 || name[nameLen - 7] != '_') return false;
+	char part[3] = "00";
+	char *end;
+	memcpy(part, &name[nameLen - 6], 2);
+	bus = (uint8)strtol(part, &end, 16);
+	if (end - part != 2) return false;
+	memcpy(part, &name[nameLen - 4], 2);
+	device = (uint8)strtol(part, &end, 16);
+	if (end - part != 2) return false;
+	memcpy(part, &name[nameLen - 2], 2);
+	function = (uint8)strtol(part, &end, 16);
+	if (end - part != 2) return false;
+	return true;
+}
+
+static status_t LookupPciDevice(pci_info &info, uint8 bus, uint8 device, uint8 function)
+{
+	uint32 index = 0;
+	for (;;) {
+		status_t res = gPoke.GetNthPciInfo(index, info);
+		if (res < B_OK) return res;
+		if (info.bus == bus && info.device == device && info.function == function) return B_OK;
+		index++;
+	}
+}
+
 
 // #pragma mark -
 
@@ -74,20 +108,31 @@ static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node, size_t b
     return device;
 }
 
-static int drmGetDeviceInt(drmDevicePtr *device, const char *path)
+static int drmGetDeviceInt(drmDevicePtr *device, const char *name)
 {
-	drmDevicePtr dev = drmDeviceAlloc(DRM_NODE_RENDER, path, sizeof(drmPciBusInfo), sizeof(drmPciDeviceInfo));
+	*device = NULL;
 
-	// !!!
+	pci_info info {};
+	if (!ParseDevPciAdr(info.bus, info.device, info.function, name)) return ENOENT;
+
+	status_t res = LookupPciDevice(info, info.bus, info.device, info.function);
+	if (res < B_OK) return res;
+
+	char path[MAXPATHLEN];
+	sprintf(path, "%s%s", sDevPath, name);
+
+	drmDevicePtr dev = drmDeviceAlloc(DRM_NODE_RENDER, path, sizeof(drmPciBusInfo), sizeof(drmPciDeviceInfo));
+	if (dev == NULL) return B_NO_MEMORY;
+
 	*dev->businfo.pci = (drmPciBusInfo){
-		.domain = 0,
-		.bus = 1,
-		.dev = 0,
-		.func = 0,
+		.domain = 0, // !!!
+		.bus = info.bus,
+		.dev = info.device,
+		.func = info.function,
 	};
 	*dev->deviceinfo.pci = (drmPciDeviceInfo){
-		.vendor_id = ATI_VENDOR_ID,
-		.device_id = 0x683f,
+		.vendor_id = info.vendor_id,
+		.device_id = info.device_id,
 	};
 
 	*device = dev;
@@ -98,15 +143,19 @@ static int drmGetDeviceInt(drmDevicePtr *device, const char *path)
 drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[], int max_devices)
 {
 	fprintf(stderr, "drmGetDevices2()\n");
-	int deviceCnt = 1;
-	if (devices == NULL) {
-		return deviceCnt;
+
+	BDirectory dir(sDevPath);
+	dir.Rewind();
+	int deviceCnt;
+	for (deviceCnt = 0; deviceCnt < max_devices;) {
+		BEntry entry;
+		if (dir.GetNextEntry(&entry, true) < B_OK) break;
+		if (devices != NULL) {
+			drmGetDeviceInt(&devices[deviceCnt], entry.Name());
+			if (devices[deviceCnt] != NULL) deviceCnt++;
+		}
 	}
-	if (max_devices >= 1) {
-		drmGetDeviceInt(&devices[0], "/dev/graphics/radeon_gfx_010000" /* !!! */);
-		return deviceCnt;
-	}
-	return 0;
+	return deviceCnt;
 }
 
 drm_public void drmFreeDevices(drmDevicePtr devices[], int count)
@@ -179,11 +228,41 @@ drm_public void drmFreeDevice(drmDevicePtr *device)
 drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
 {
 	fprintf(stderr, "drmGetDevice2()\n");
-	drmGetDeviceInt(device, "/dev/graphics/radeon_gfx_010000" /* !!! */);
-	return 0;
+
+	struct stat st {};
+	if (fstat(fd, &st) < 0) return B_ERROR;
+
+	BDirectory dir(sDevPath);
+	dir.Rewind();
+	BEntry entry;
+	while (dir.GetNextEntry(&entry, true) >= B_OK) {
+		struct stat st2 {};
+		if (entry.GetStat(&st2) < B_OK) return B_ERROR;
+		if (st.st_dev == st2.st_dev && st.st_ino == st2.st_ino) {
+			drmGetDeviceInt(device, entry.Name());
+			return 0;
+		}
+	}
+	return B_ERROR;
 }
 
 drm_public char *drmGetRenderDeviceNameFromFd(int fd)
 {
-    return strdup("/dev/graphics/radeon_gfx_010000" /* !!! */);
+	struct stat st {};
+	if (fstat(fd, &st) < 0) return NULL;
+
+	BDirectory dir(sDevPath);
+	dir.Rewind();
+	BEntry entry;
+	while (dir.GetNextEntry(&entry, true) >= B_OK) {
+		struct stat st2 {};
+		if (entry.GetStat(&st2) < B_OK) return NULL;
+		if (st.st_dev == st2.st_dev && st.st_ino == st2.st_ino) {
+			char *path = (char*)malloc(strlen(sDevPath) + strlen(entry.Name() + 1));
+			if (path == NULL) return NULL;
+			sprintf(path, "%s%s", sDevPath, entry.Name());
+			return path;
+		}
+	}
+	return NULL;
 }
